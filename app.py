@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import joblib
+import re
 
 # Load model and encoder
 model = joblib.load("c_question_model.pkl")
@@ -20,9 +21,16 @@ if uploaded_file is not None:
 
     if 'Topic' in df.columns:
         df['TopicEncoded'] = encoder.transform(df['Topic'])
+
+        # ✅ Show all unique topics in a nice display box (sorted)
+        all_topics = sorted(df['Topic'].dropna().unique())
+        st.markdown("### 🧠 Model is trained on these topics:")
+        st.success(", ".join(all_topics))
+
     else:
         st.error("❌ 'Topic' column is missing in the uploaded CSV.")
 
+    # 📊 Batch prediction
     if all(col in df.columns for col in ['TopicEncoded', 'Marks', 'RepetitionCount']):
         X_new = df[['TopicEncoded', 'Marks', 'RepetitionCount']]
         predictions = model.predict(X_new)
@@ -34,9 +42,9 @@ if uploaded_file is not None:
     else:
         st.error("❌ Required columns missing: TopicEncoded, Marks, RepetitionCount.")
 else:
-    st.warning("⚠️ Please upload a question CSV to enable prediction and topic matching.")
+    st.warning("⚠️ Please upload a question CSV to enable topic matching and prediction.")
 
-# Manual Prediction Using Full Question Text
+# 🧠 Predict from full question text (manual)
 st.markdown("---")
 st.subheader("🧠 Predict Using Full Question Text")
 
@@ -47,23 +55,23 @@ with st.form("full_question_input"):
 
     if submit_question:
         if uploaded_file is None:
-            st.error("Please upload a question CSV first to enable topic matching.")
+            st.error("❌ Please upload a CSV file first. The system uses it to match topics and estimate repetition.")
         else:
             matched_topic = None
             question_lower = question_text.lower()
 
-            # Get topic list from uploaded dataset
             all_topics = df['Topic'].dropna().unique()
 
+            # ✅ Case-insensitive topic matching with full word search
             for topic in all_topics:
-                if topic.lower() in question_lower:
+                if re.search(rf"\\b{re.escape(topic.lower())}\\b", question_lower):
                     matched_topic = topic
                     break
 
             if matched_topic:
                 try:
                     topic_encoded = encoder.transform([matched_topic])[0]
-                    avg_rep = df[df['Topic'] == matched_topic]['RepetitionCount'].mean()
+                    avg_rep = df[df['Topic'].str.lower() == matched_topic.lower()]['RepetitionCount'].mean()
                     estimated_rep = int(avg_rep) if not pd.isna(avg_rep) else 1
 
                     X_single = pd.DataFrame([[topic_encoded, marks_input, estimated_rep]],
@@ -80,4 +88,4 @@ with st.form("full_question_input"):
                 except ValueError:
                     st.error("⚠️ Error encoding topic. Please check topic values.")
             else:
-                st.error("⚠️ Could not identify the topic. Try to include keywords like 'loops', 'structures', etc.")
+                st.error("⚠️ Could not identify the topic in your question. Try using known keywords like 'arrays', 'loops', 'structures', etc.")
